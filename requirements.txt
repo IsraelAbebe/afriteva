@@ -1,0 +1,7 @@
+pandas==1.2.5 
+flax
+jax
+datasets 
+sentencepiece
+git+https://github.com/huggingface/transformers
+pytorch-lightning
