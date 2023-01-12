@@ -51,12 +51,13 @@ def get_parser() -> argparse.ArgumentParser:
 def generate_class_token(class_labels: list, tokenizer):
     class_map = {}
     for label in class_labels:
-        if len(tokenizer.encode(label)) > 2:
+        if len(tokenizer.encode(label)) < 2:
             class_map[label] = label
         else:
             token = ""
             while not token.startswith("▁"):
                 token = random.sample(list(tokenizer.vocab.keys()), 1)[0]
+                # print('token',token)
             class_map[label] = token.replace("▁", "")
     return class_map
 
@@ -72,7 +73,10 @@ def main():
     label = args.class_labels.split(",") 
     class_map = generate_class_token(label, tokenizer)
     inv_class_map = {v: k for k, v in class_map.items()}
-
+    
+    # print('class_map',class_map)
+    # print('label',label)
+    # print('inv_class_map',inv_class_map)
     dataset_kwargs = {
         "data_column": args.data_column,
         "target_column": args.target_column,
@@ -150,10 +154,19 @@ def main():
                 max_length=2,
             )
             dec = [tokenizer.decode(ids, skip_special_tokens=True) for ids in outs]
+            
+            dec = [tokenizer.decode(ids, skip_special_tokens=True) for ids in outs]
             target = [
                 tokenizer.decode(ids, skip_special_tokens=True)
                 for ids in batch["target_ids"]
             ]
+            
+#             print("[DEBUG] Generating predictions .........")
+#             print('targets',targets)
+
+#             print('inv_class_map',inv_class_map)
+
+    
             target = [inv_class_map[item] for item in target]
             dec = [inv_class_map[item] for item in dec]
 
@@ -183,6 +196,11 @@ def main():
         for ids in new_batch["target_ids"]
     ]
 
+#     print("[DEBUG] Generating predictions .........")
+#     print('targets',targets)
+    
+#     print('inv_class_map',inv_class_map)
+    
     targets = [inv_class_map[item] for item in targets]
     dec = [inv_class_map[item] for item in dec]
 

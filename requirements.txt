@@ -5,3 +5,4 @@ datasets
 sentencepiece
 git+https://github.com/huggingface/transformers
 pytorch-lightning
+nltk

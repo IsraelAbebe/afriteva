@@ -1,6 +1,8 @@
 #!/bin/bash
 
-for j in   'am' #'dz' 'ha' 'ig' 'kr' 'ma' 'pcm' 'pt' 'sw' 'ts' 'twi' 'yo'
+export TOKENIZERS_PARALLELISM=false
+
+for j in  'am' # 'dz' 'ha' 'ig' 'kr' 'ma' 'pcm' 'pt' 'sw' 'ts' 'twi' 'yo'
 do
  
     for i in "castorini/afriteva_small"  #"masakhane/afri-mt5-base" "masakhane/afri-byt5-base"
@@ -12,7 +14,7 @@ do
 
         model_name_or_path=$i
         tokenizer_name_or_path=$i
-        output_dir=$i
+        output_dir="output_"${i}-${j}
 
         max_seq_length="128"
         learning_rate="3e-4"
