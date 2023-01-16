@@ -1,4 +1,4 @@
-from classification_dataset import ClassificationDataset
+from classification_dataset import ClassificationDataset,ClassificationDatasetTest
 from utils import LoggingCallback
 import random
 import argparse
@@ -11,6 +11,9 @@ from transformers import AutoTokenizer
 from model import T5FineTuner
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import CSVLogger
+import json
+import os
+import pandas as pd
 
 MODEL_MAX_LENGTH = 512
 
@@ -51,14 +54,11 @@ def get_parser() -> argparse.ArgumentParser:
 def generate_class_token(class_labels: list, tokenizer):
     class_map = {}
     for label in class_labels:
-        if len(tokenizer.encode(label)) < 2:
-            class_map[label] = label
-        else:
-            token = ""
-            while not token.startswith("▁"):
-                token = random.sample(list(tokenizer.vocab.keys()), 1)[0]
-                # print('token',token)
-            class_map[label] = token.replace("▁", "")
+        token = ""
+        while not token.startswith("▁"):
+            token = random.sample(list(tokenizer.vocab.keys()), 1)[0]
+            # print('token',token)
+        class_map[label] = token.replace("▁", "")
     return class_map
 
 
@@ -71,12 +71,23 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name_or_path)
 
     label = args.class_labels.split(",") 
-    class_map = generate_class_token(label, tokenizer)
+    
+    if os.path.isfile(f"{args.output_dir}/class_map-{args.lang}.json"):
+        print('class map file found  --------------------------------------')
+        try:
+            with open(f"{args.output_dir}/class_map-{args.lang}.json", 'r') as openfile:
+                class_map = json.load(openfile)
+                print('found class_map : ',class_map)
+        except:
+            pass
+    else:
+        print('class map file not found  --------------------------------------')
+        class_map = generate_class_token(label, tokenizer)
+    
     inv_class_map = {v: k for k, v in class_map.items()}
     
-    # print('class_map',class_map)
-    # print('label',label)
-    # print('inv_class_map',inv_class_map)
+    
+    
     dataset_kwargs = {
         "data_column": args.data_column,
         "target_column": args.target_column,
@@ -100,12 +111,25 @@ def main():
         )
 
     if args.test_data_path is not None:
-        test_dataset = ClassificationDataset(
+        test_dataset = ClassificationDatasetTest(
             tokenizer=tokenizer,
             data_path=args.test_data_path,
             **dataset_kwargs
         )
+        
+#         print('Testing and predicting for the challenge----------------------------')
+#         test_loader = DataLoader(test_dataset, batch_size=4, num_workers=1, shuffle=False)
+#         outputs = []
+#         output_id = []
+#         for batch in tqdm(test_loader):
+#             print(batch["column_id"])
+#             break
 
+        
+    
+        
+# '''        
+        
     # save checkpoint during training
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         filename=args.output_dir + "/checkpoint.pth",
@@ -137,17 +161,26 @@ def main():
     t5_finetuner_module = T5FineTuner(args, train_dataset=train_dataset, eval_dataset=eval_dataset)
     trainer = pl.Trainer(**train_params)
     trainer.fit(t5_finetuner_module)
+    
+    
+    
+#     load checkpoint 
+#     model =T5ForConditionalGeneration.from_pretrained("hf_model")
+    
+    
+    with open(f"{args.output_dir}/class_map-{args.lang}.json", "w") as outfile:
+        json.dump(class_map, outfile)
+        print('saved new class_map :',class_map)
 
 
     print("[INFO] Evaluating model .........")
-    test_loader = DataLoader(test_dataset, batch_size=64, num_workers=4, shuffle=True)
+    eval_loader = DataLoader(eval_dataset, batch_size=64, num_workers=4, shuffle=True)
     with torch.no_grad():
         t5_finetuner_module.model.eval()
         t5_finetuner_module = t5_finetuner_module.to("cpu")
         outputs = []
         targets = []
-        for batch in tqdm(test_loader):
-
+        for batch in tqdm(eval_loader):
             outs = t5_finetuner_module.model.generate(
                 input_ids=batch["source_ids"],
                 attention_mask=batch["source_mask"],
@@ -176,8 +209,9 @@ def main():
     print(metrics.accuracy_score(targets, outputs))
     print(metrics.classification_report(targets, outputs))
 
+    # t5_finetuner_module.model.save_pretrained('t5_base_imdb_sentiment')
     print("[INFO] Generating predictions .........")
-    new_batch = next(iter(test_loader))
+    new_batch = next(iter(eval_loader))
     new_batch["source_ids"].shape
     outs = t5_finetuner_module.model.generate(
         input_ids=new_batch["source_ids"],
@@ -212,6 +246,32 @@ def main():
         print("predicted sentiment: %s" % dec[i])
         print("=====================================================================\n")
 
+        
+    print('Testing and predicting for the challenge----------------------------')
+    test_loader = DataLoader(test_dataset, batch_size=64, num_workers=1, shuffle=False)
+    outputs = []
+    output_id = []
+    for batch in tqdm(test_loader):
+        output_id.extend(batch["column_id"])
+        outs = t5_finetuner_module.model.generate(
+            input_ids=batch["source_ids"],
+            attention_mask=batch["source_mask"],
+            max_length=2,
+        )
+        dec = [tokenizer.decode(ids, skip_special_tokens=True) for ids in outs]
+
+        dec = [tokenizer.decode(ids, skip_special_tokens=True) for ids in outs]
+        dec = [inv_class_map[item] for item in dec]
+
+        outputs.extend(dec)
+        
+        
+    output_tsv = pd.concat([pd.DataFrame(output_id),pd.DataFrame(outputs)],axis=1)
+    output_tsv.columns = ['ID','label']
+    # print(output_tsv.head())
+    output_tsv.to_csv(f"{args.output_dir}/pred_{args.lang}.tsv",sep='\t', index=False)
+        
+          
 
 if __name__ == "__main__":
     main()
